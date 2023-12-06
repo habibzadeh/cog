@@ -500,8 +500,11 @@ class WorkerState(RuleBasedStateMachine):
         try:
             self.setup_generator = self.worker.setup()
             self.setup_events = []
+            # read one event so that we raise InvalidStateException
+            event = self.await_(anext(self.setup_generator))
+            self.setup_events.append(event)
         except InvalidStateException:
-            pass
+            self.setup_generator = None
 
     @precondition(lambda x: x.setup_generator)
     @rule(n=st.integers(min_value=1, max_value=10))
@@ -529,8 +532,10 @@ class WorkerState(RuleBasedStateMachine):
             self.predict_generator = self.worker.predict(payload)
             self.predict_payload = payload
             self.predict_events = []
+            event = self.await_(anext(self.predict_generator))
+            self.predict_events.append(event)
         except InvalidStateException:
-            pass
+            self.predict_generator = None
 
     @precondition(lambda x: x.predict_generator)
     @rule(n=st.integers(min_value=1, max_value=10))
@@ -542,6 +547,8 @@ class WorkerState(RuleBasedStateMachine):
         except StopAsyncIteration:
             self.predict_generator = None
             self._check_predict_events()
+        except InvalidStateException:
+            pass
 
     def _check_predict_events(self):
         assert isinstance(self.predict_events[-1], Done)
@@ -576,6 +583,7 @@ class WorkerState(RuleBasedStateMachine):
         self.worker.shutdown()
         # really make sure everything is shut down and cleaned up
         self.worker.terminate()
+        self.await_(asyncio.sleep(0.01))
 
 
 TestWorkerState = WorkerState.TestCase
